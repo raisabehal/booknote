@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -7,13 +8,17 @@ import { colors, fonts } from '@/constants/theme';
 
 /**
  * The four-tab shell: Home / Shelf / Vote / Chat. Active tab uses the
- * terracotta accent, inactive is muted — over the cream surface bar with a
- * hairline warm border and a safe-area-aware bottom inset so it's never clipped
- * (on devices or behind a mobile browser's bottom UI).
+ * terracotta accent, inactive is muted — over the cream surface bar.
+ *
+ * Web/mobile-browser hardening: the bar carries a generous bottom clearance so
+ * the labels sit above the browser's bottom chrome (Safari's address/tool bar),
+ * and enough total height that the icon + label never get clipped internally.
  */
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  const bottomInset = Math.max(insets.bottom, 12);
+  // On web, browsers under-report the bottom safe area while their bottom UI
+  // still overlaps content, so floor the clearance higher there.
+  const bottomInset = Math.max(insets.bottom, Platform.OS === 'web' ? 28 : 12);
 
   return (
     <Tabs
@@ -26,14 +31,16 @@ export default function TabLayout() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          paddingTop: 10,
-          height: 60 + bottomInset,
+          paddingTop: 8,
+          height: 58 + bottomInset,
           paddingBottom: bottomInset,
         },
+        tabBarIconStyle: { marginTop: 2 },
         tabBarLabelStyle: {
           fontFamily: fonts.sansSemiBold,
           fontSize: 10,
-          marginTop: 3,
+          lineHeight: 13,
+          marginTop: 2,
         },
         tabBarItemStyle: { paddingTop: 2 },
       }}>
