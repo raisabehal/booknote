@@ -1,8 +1,8 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Ellipse, G, Path, Rect } from 'react-native-svg';
 
 import { PressableScale } from '@/components/ui/pressable-scale';
-import { colors, fonts } from '@/constants/theme';
+import { colors } from '@/constants/theme';
 
 /** The six spines on the shelf, mapped to their seeded book ids. */
 const SPINES = [
@@ -56,13 +56,9 @@ function Spine({
   return (
     <PressableScale
       onPress={onPress}
-      style={[styles.spine, { width: spine.w, height: spine.h, backgroundColor: spine.color }]}>
+      style={[styles.spine, { width: spine.w, height: spine.h, backgroundColor: spine.color }]}
+      accessibilityLabel={spine.label}>
       <View style={styles.spineHighlight} />
-      <Text
-        numberOfLines={1}
-        style={[styles.spineLabel, { color: spine.text, width: spine.h - 16 }]}>
-        {spine.label}
-      </Text>
     </PressableScale>
   );
 }
@@ -157,12 +153,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 1.5,
     backgroundColor: 'rgba(255,255,255,0.14)',
-  },
-  spineLabel: {
-    fontFamily: fonts.serifSemiBold,
-    fontSize: 8.5,
-    transform: [{ rotate: '-90deg' }],
-    textAlign: 'left',
   },
   wood: {
     height: 8,

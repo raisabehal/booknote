@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { TabBarIcon } from '@/components/tab-bar-icon';
@@ -8,9 +8,13 @@ import { colors, fonts } from '@/constants/theme';
 /**
  * The four-tab shell: Home / Shelf / Vote / Chat. Active tab uses the
  * terracotta accent, inactive is muted — over the cream surface bar with a
- * hairline warm border and a generous bottom safe area, per the spec.
+ * hairline warm border and a safe-area-aware bottom inset so it's never clipped
+ * (on devices or behind a mobile browser's bottom UI).
  */
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 10);
+
   return (
     <Tabs
       screenOptions={{
@@ -23,8 +27,8 @@ export default function TabLayout() {
           borderTopColor: colors.border,
           borderTopWidth: 1,
           paddingTop: 8,
-          height: Platform.select({ ios: 84, default: 68 }),
-          paddingBottom: Platform.select({ ios: 26, default: 12 }),
+          height: 52 + bottomInset,
+          paddingBottom: bottomInset,
         },
         tabBarLabelStyle: {
           fontFamily: fonts.sansSemiBold,
