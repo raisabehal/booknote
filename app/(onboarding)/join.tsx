@@ -3,11 +3,11 @@ import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { OnboardingShell } from '@/components/onboarding/onboarding-shell';
-import { Avatar } from '@/components/ui/avatar';
+import { AvatarStack } from '@/components/ui/avatar-stack';
 import { PrimaryButton } from '@/components/ui/button';
 import { TextField } from '@/components/ui/text-field';
 import { colors, fonts, radius, shadows } from '@/constants/theme';
-import { avatarStack, clubMeta, currentBook } from '@/data/selectors';
+import { clubMeta, currentBook } from '@/data/selectors';
 import { useBooknote } from '@/data/store';
 
 export default function JoinScreen() {
@@ -20,7 +20,6 @@ export default function JoinScreen() {
   const book = currentBook(state);
   // The invite previews the club you'd be joining — show its existing members.
   const others = state.members.filter((m) => !m.isCurrentUser);
-  const stack = avatarStack(others, 2);
 
   return (
     <OnboardingShell
@@ -54,29 +53,7 @@ export default function JoinScreen() {
                 <Text style={styles.readingLabel}>Currently reading</Text>
                 <Text style={styles.readingTitle}>{book?.title ?? '—'}</Text>
               </View>
-              <View style={styles.stack}>
-                {stack.shown.map((m, i) => (
-                  <Avatar
-                    key={m.id}
-                    initials={m.initials}
-                    color={m.color}
-                    size={26}
-                    ring
-                    style={i > 0 ? styles.stacked : undefined}
-                  />
-                ))}
-                {stack.overflow > 0 ? (
-                  <Avatar
-                    initials={`+${stack.overflow}`}
-                    color={colors.avatarOverflowBg}
-                    textColor={colors.muted}
-                    size={26}
-                    ring
-                    fontSize={9}
-                    style={styles.stacked}
-                  />
-                ) : null}
-              </View>
+              <AvatarStack members={others} max={2} size={26} overlap={7} />
             </View>
           </View>
         </View>
@@ -161,11 +138,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.ink,
     marginTop: 1,
-  },
-  stack: {
-    flexDirection: 'row',
-  },
-  stacked: {
-    marginLeft: -7,
   },
 });

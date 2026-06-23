@@ -57,7 +57,7 @@ constants/
 1. **Scaffold** — Expo + TS + Router, fonts loaded, `theme.ts`, tab shell ✅
 2. **Data layer** — typed models + seeded "Rhythm Readers" demo club ✅
 3. **Onboarding** — welcome → account → join/create (mock auth behind an interface) ✅
-4. Home tab
+4. **Home tab** — next-meeting card, progress, coming-up, bookshelf ✅
 5. Schedule sheet (calendar, book picker, host picker)
 6. Vote tab (per-meeting polls)
 7. Shelf, Chat, Book detail, Profile sheet

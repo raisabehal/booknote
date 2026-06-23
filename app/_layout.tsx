@@ -42,6 +42,18 @@ function RootNav() {
         }}>
         <Stack.Protected guard={authed}>
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen
+            name="schedule"
+            options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen
+            name="book/[id]"
+            options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
+          />
+          <Stack.Screen
+            name="profile"
+            options={{ presentation: 'transparentModal', animation: 'fade' }}
+          />
         </Stack.Protected>
         <Stack.Protected guard={!authed}>
           <Stack.Screen name="(onboarding)" />
