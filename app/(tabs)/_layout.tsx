@@ -16,9 +16,7 @@ import { colors, fonts } from '@/constants/theme';
  */
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  // On web, browsers under-report the bottom safe area while their bottom UI
-  // still overlaps content, so floor the clearance higher there.
-  const bottomInset = Math.max(insets.bottom, Platform.OS === 'web' ? 28 : 12);
+  const bottomInset = Math.max(insets.bottom, Platform.OS === 'web' ? 18 : 12);
 
   return (
     <Tabs
@@ -32,17 +30,17 @@ export default function TabLayout() {
           borderTopColor: colors.border,
           borderTopWidth: 1,
           paddingTop: 8,
-          height: 58 + bottomInset,
+          // Generous content height so the icon + label never clip on web.
+          height: 64 + bottomInset,
           paddingBottom: bottomInset,
         },
-        tabBarIconStyle: { marginTop: 2 },
         tabBarLabelStyle: {
           fontFamily: fonts.sansSemiBold,
-          fontSize: 10,
-          lineHeight: 13,
-          marginTop: 2,
+          fontSize: 11,
+          // A comfortable line box — too small a lineHeight clips letter tops
+          // in the browser.
+          lineHeight: 16,
         },
-        tabBarItemStyle: { paddingTop: 2 },
       }}>
       <Tabs.Screen
         name="index"
