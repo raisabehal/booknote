@@ -4,8 +4,10 @@
  * instead of hardcoding counts, avatars, host lists or vote percentages.
  */
 
-import { daysBetweenIso, relLabel, todayIso } from './format';
-import type { BooknoteState, Candidate, Member, Poll } from './models';
+import { colors, genreColors } from '@/constants/theme';
+
+import { addDaysIso, daysBetweenIso, relLabel, todayIso } from './format';
+import type { Book, BooknoteState, Candidate, Member, Poll } from './models';
 
 // ---------------------------------------------------------------------------
 // Members
@@ -142,4 +144,63 @@ export function pollStatusLabel(poll: Poll, now: Date): string {
 /** The poll linked to an upcoming meeting whose book is "put to a vote". */
 export function pollForMeeting(state: BooknoteState, meetingId: string): Poll | undefined {
   return state.polls.find((p) => p.id === meetingId);
+}
+
+// ---------------------------------------------------------------------------
+// Shelf
+// ---------------------------------------------------------------------------
+
+/** Books the club has finished, newest first (seed order is already newest-first). */
+export function readBooks(state: BooknoteState): Book[] {
+  return state.books.filter((b) => b.status === 'read');
+}
+
+export interface ShelfStats {
+  count: number;
+  /** Average club rating across read books, to one decimal (e.g. "4.3"). */
+  avg: string;
+  genres: number;
+}
+
+export function shelfStats(state: BooknoteState): ShelfStats {
+  const read = readBooks(state);
+  const rated = read.filter((b) => b.clubRating != null);
+  const avg = rated.length
+    ? (rated.reduce((sum, b) => sum + (b.clubRating ?? 0), 0) / rated.length).toFixed(1)
+    : '—';
+  const genres = new Set(read.map((b) => b.genre)).size;
+  return { count: read.length, avg, genres };
+}
+
+export interface GenreBar {
+  name: string;
+  count: number;
+  /** 0–100 width relative to the most-read genre. */
+  pct: number;
+  color: string;
+}
+
+/** Genre breakdown bars, most-read first. */
+export function genreBreakdown(state: BooknoteState): GenreBar[] {
+  const counts: Record<string, number> = {};
+  for (const b of readBooks(state)) counts[b.genre] = (counts[b.genre] ?? 0) + 1;
+  const max = Math.max(1, ...Object.values(counts));
+  return Object.keys(counts)
+    .sort((a, b) => counts[b] - counts[a])
+    .map((name) => ({
+      name,
+      count: counts[name],
+      pct: Math.round((counts[name] / max) * 100),
+      color: genreColors[name] ?? colors.accent,
+    }));
+}
+
+/** A sensible default date for a brand-new meeting: two weeks after the latest
+ *  meeting already on the books (ISO yyyy-mm-dd sorts lexically). */
+export function defaultNextMeetingDate(state: BooknoteState, now: Date): string {
+  const latest = [state.meeting.date, ...state.upcoming.map((u) => u.date)].reduce(
+    (a, b) => (a > b ? a : b),
+    todayIso(now),
+  );
+  return addDaysIso(latest, 14);
 }
