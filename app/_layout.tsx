@@ -20,6 +20,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
 import { colors } from '@/constants/theme';
+import { BooknoteProvider } from '@/data/store';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -49,16 +50,18 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.background },
-          }}>
-          <Stack.Screen name="(tabs)" />
-        </Stack>
-        <StatusBar style="dark" />
-      </View>
+      <BooknoteProvider>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.background },
+            }}>
+            <Stack.Screen name="(tabs)" />
+          </Stack>
+          <StatusBar style="dark" />
+        </View>
+      </BooknoteProvider>
     </SafeAreaProvider>
   );
 }

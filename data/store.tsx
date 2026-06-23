@@ -1,0 +1,454 @@
+/**
+ * The Booknote data store: a pure reducer over {@link BooknoteState} wrapped in
+ * a React context provider that owns id/timestamp generation, notifier
+ * side-effects, local persistence and the session clock.
+ *
+ * Screens consume `useBooknote()` (or the focused `useBooknoteState` /
+ * `useBooknoteActions` hooks) and never touch persistence/auth/notifications
+ * directly — those stay behind the interfaces in this folder so a real backend
+ * can be dropped in later.
+ */
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+
+import { addDaysIso, todayIso } from './format';
+import type {
+  AppPick,
+  BooknoteState,
+  BookSelection,
+  Candidate,
+  Message,
+  UpcomingMeeting,
+  User,
+} from './models';
+import { defaultAuth, type AuthProvider } from './auth';
+import { defaultNotifier, type Notifier } from './notifications';
+import { defaultPersistence, type PersistenceAdapter } from './persistence';
+import { buildSeed } from './seed';
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+type Action =
+  | { type: 'HYDRATE'; state: BooknoteState }
+  | { type: 'RESET'; state: BooknoteState }
+  | { type: 'SET_USER'; user: User | null }
+  | { type: 'RATE_BOOK'; bookId: string; star: number }
+  | { type: 'TOGGLE_RSVP' }
+  | { type: 'CAST_VOTE'; pollId: string; candidateId: string }
+  | { type: 'TOGGLE_REACTION'; messageId: string; emoji: string }
+  | { type: 'ADD_MESSAGE'; message: Message }
+  | { type: 'ADD_CANDIDATE'; pollId: string; candidate: Candidate; autoVote: boolean }
+  | { type: 'SEND_POLL'; pollId: string }
+  | { type: 'SET_NEXT_MEETING'; date: string; time: string; place: string; hostId: string }
+  | { type: 'ADD_UPCOMING'; meeting: UpcomingMeeting; poll?: BooknoteState['polls'][number] }
+  | { type: 'UPDATE_UPCOMING'; meeting: UpcomingMeeting; poll?: BooknoteState['polls'][number] }
+  | { type: 'REMOVE_UPCOMING'; id: string };
+
+// ---------------------------------------------------------------------------
+// Reducer (pure)
+// ---------------------------------------------------------------------------
+
+export function reducer(state: BooknoteState, action: Action): BooknoteState {
+  switch (action.type) {
+    case 'HYDRATE':
+    case 'RESET':
+      return action.state;
+
+    case 'SET_USER':
+      return { ...state, user: action.user };
+
+    case 'RATE_BOOK':
+      return {
+        ...state,
+        books: state.books.map((b) =>
+          b.id === action.bookId
+            ? { ...b, myRating: b.myRating === action.star ? 0 : action.star }
+            : b,
+        ),
+      };
+
+    case 'TOGGLE_RSVP':
+      return { ...state, rsvp: !state.rsvp };
+
+    case 'CAST_VOTE':
+      return {
+        ...state,
+        polls: state.polls.map((p) =>
+          p.id === action.pollId
+            ? { ...p, myVote: p.myVote === action.candidateId ? null : action.candidateId }
+            : p,
+        ),
+      };
+
+    case 'TOGGLE_REACTION':
+      return {
+        ...state,
+        messages: state.messages.map((m) => {
+          if (m.id !== action.messageId) return m;
+          const myReactions = { ...m.myReactions, [action.emoji]: !m.myReactions[action.emoji] };
+          return { ...m, myReactions };
+        }),
+      };
+
+    case 'ADD_MESSAGE':
+      return { ...state, messages: [...state.messages, action.message] };
+
+    case 'ADD_CANDIDATE':
+      return {
+        ...state,
+        polls: state.polls.map((p) =>
+          p.id === action.pollId
+            ? {
+                ...p,
+                candidates: [...p.candidates, action.candidate],
+                myVote: action.autoVote ? action.candidate.id : p.myVote,
+              }
+            : p,
+        ),
+      };
+
+    case 'SEND_POLL':
+      return {
+        ...state,
+        polls: state.polls.map((p) =>
+          p.id === action.pollId ? { ...p, status: 'open' } : p,
+        ),
+      };
+
+    case 'SET_NEXT_MEETING':
+      return {
+        ...state,
+        meeting: {
+          ...state.meeting,
+          date: action.date,
+          time: action.time,
+          place: action.place,
+          hostId: action.hostId,
+        },
+      };
+
+    case 'ADD_UPCOMING':
+      return {
+        ...state,
+        upcoming: [...state.upcoming, action.meeting],
+        polls: action.poll ? [...state.polls, action.poll] : state.polls,
+      };
+
+    case 'UPDATE_UPCOMING':
+      return {
+        ...state,
+        upcoming: state.upcoming.map((u) => (u.id === action.meeting.id ? action.meeting : u)),
+        polls:
+          action.poll && !state.polls.some((p) => p.id === action.poll!.id)
+            ? [...state.polls, action.poll]
+            : state.polls,
+      };
+
+    case 'REMOVE_UPCOMING':
+      return {
+        ...state,
+        upcoming: state.upcoming.filter((u) => u.id !== action.id),
+        polls: state.polls.filter((p) => p.id !== action.id),
+      };
+
+    default:
+      return state;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Provider plumbing
+// ---------------------------------------------------------------------------
+
+let idCounter = 0;
+/** Monotonic, collision-resistant id (timestamp + counter). */
+function uid(prefix: string): string {
+  idCounter += 1;
+  return `${prefix}-${Date.now().toString(36)}-${idCounter}`;
+}
+
+/** A form draft handed to {@link BooknoteActions.saveMeeting}. */
+export interface MeetingDraft {
+  date: string;
+  time: string;
+  place: string;
+  hostId: string;
+  /** Ignored when scheduleMode is `next` (the next meeting keeps its book). */
+  book: BookSelection;
+}
+
+export type ScheduleMode = 'next' | 'add' | 'editUpcoming';
+
+export interface SaveMeetingResult {
+  /** Set when this save created a draft poll, so the caller can deep-link to
+   *  the Vote tab with the add-option panel open. */
+  votePollId: string | null;
+}
+
+export interface BooknoteActions {
+  rateBook(bookId: string, star: number): void;
+  toggleRsvp(): void;
+  castVote(pollId: string, candidateId: string): void;
+  toggleReaction(messageId: string, emoji: string): void;
+  /** Append a chat message from the current user. Returns its id. */
+  sendMessage(text: string): string | null;
+  /** Suggest a member's book into a poll and auto-select it as the user's vote. */
+  suggestCandidate(pollId: string, title: string): void;
+  /** Add an app pick to a poll without casting a vote. */
+  addAppPick(pollId: string, pick: AppPick): void;
+  /** Flip a draft poll to open and notify the club. */
+  sendPoll(pollId: string): void;
+  /** Create/update a meeting (next | add | editUpcoming), wiring up a draft
+   *  poll when the book is "put to a vote". */
+  saveMeeting(draft: MeetingDraft, mode: ScheduleMode, editId?: string): SaveMeetingResult;
+  removeUpcoming(id: string): void;
+  /** Set the signed-in user (onboarding). */
+  setUser(user: User | null): void;
+  /** Sign out via the auth provider and clear the session user. */
+  signOut(): Promise<void>;
+}
+
+export interface BooknoteContextValue {
+  state: BooknoteState;
+  /** Session clock — captured once at mount so labels stay stable. */
+  now: Date;
+  /** True once any persisted state has been loaded (or confirmed absent). */
+  hydrated: boolean;
+  actions: BooknoteActions;
+  auth: AuthProvider;
+  notifier: Notifier;
+}
+
+const BooknoteContext = createContext<BooknoteContextValue | null>(null);
+
+export interface BooknoteProviderProps {
+  children: ReactNode;
+  /** Override the clock (tests / demos). Defaults to the real current date. */
+  now?: Date;
+  persistence?: PersistenceAdapter;
+  auth?: AuthProvider;
+  notifier?: Notifier;
+  /** Override the initial state (tests). Defaults to the seeded demo club. */
+  initialState?: BooknoteState;
+}
+
+export function BooknoteProvider({
+  children,
+  now,
+  persistence = defaultPersistence,
+  auth = defaultAuth,
+  notifier = defaultNotifier,
+  initialState,
+}: BooknoteProviderProps) {
+  // The clock is fixed for the session so relative labels don't drift mid-use.
+  const clock = useMemo(() => now ?? new Date(), [now]);
+
+  // Seed synchronously so screens always have data; persisted state (if any)
+  // is loaded right after and replaces it.
+  const [state, setState] = useState<BooknoteState>(
+    () => initialState ?? buildSeed(clock),
+  );
+  const [hydrated, setHydrated] = useState(false);
+
+  // `dispatch` runs the pure reducer against the latest state.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const dispatch = useCallback((action: Action) => {
+    setState((prev) => reducer(prev, action));
+  }, []);
+
+  // Hydrate from local persistence once.
+  useEffect(() => {
+    let active = true;
+    persistence
+      .load()
+      .then((loaded) => {
+        if (active && loaded) setState(loaded);
+      })
+      .finally(() => {
+        if (active) setHydrated(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [persistence]);
+
+  // Persist on change once hydrated (debounced).
+  useEffect(() => {
+    if (!hydrated) return;
+    const handle = setTimeout(() => {
+      void persistence.save(state);
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [state, hydrated, persistence]);
+
+  const actions = useMemo<BooknoteActions>(() => {
+    const defaultCloses = () => addDaysIso(todayIso(clock), 5);
+
+    return {
+      rateBook: (bookId, star) => dispatch({ type: 'RATE_BOOK', bookId, star }),
+      toggleRsvp: () => dispatch({ type: 'TOGGLE_RSVP' }),
+      castVote: (pollId, candidateId) => dispatch({ type: 'CAST_VOTE', pollId, candidateId }),
+      toggleReaction: (messageId, emoji) => dispatch({ type: 'TOGGLE_REACTION', messageId, emoji }),
+
+      sendMessage: (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return null;
+        const id = uid('msg');
+        dispatch({
+          type: 'ADD_MESSAGE',
+          message: {
+            id,
+            authorId: stateRef.current.user?.id ?? 'you',
+            text: trimmed,
+            createdAt: Date.now(),
+            reactions: {},
+            myReactions: {},
+          },
+        });
+        return id;
+      },
+
+      suggestCandidate: (pollId, title) => {
+        const trimmed = title.trim();
+        if (!trimmed) return;
+        const candidate: Candidate = {
+          id: uid('cand'),
+          title: trimmed,
+          author: 'Your suggestion',
+          suggestedBy: stateRef.current.user?.id ?? 'you',
+          baseVotes: 0,
+          color: '#9C5C6E',
+          isAppPick: false,
+        };
+        dispatch({ type: 'ADD_CANDIDATE', pollId, candidate, autoVote: true });
+      },
+
+      addAppPick: (pollId, pick) => {
+        const candidate: Candidate = {
+          id: uid('cand'),
+          title: pick.title,
+          author: pick.author,
+          suggestedBy: 'app',
+          baseVotes: 0,
+          color: pick.color,
+          isAppPick: true,
+        };
+        dispatch({ type: 'ADD_CANDIDATE', pollId, candidate, autoVote: false });
+      },
+
+      sendPoll: (pollId) => {
+        dispatch({ type: 'SEND_POLL', pollId });
+        const poll = stateRef.current.polls.find((p) => p.id === pollId);
+        if (poll) notifier.pollSent({ ...poll, status: 'open' });
+      },
+
+      saveMeeting: (draft, mode, editId): SaveMeetingResult => {
+        if (mode === 'next') {
+          dispatch({
+            type: 'SET_NEXT_MEETING',
+            date: draft.date,
+            time: draft.time,
+            place: draft.place,
+            hostId: draft.hostId,
+          });
+          notifier.meetingChanged({ ...stateRef.current.meeting, ...draft });
+          return { votePollId: null };
+        }
+
+        const isAdd = mode === 'add';
+        const id = isAdd ? uid('mtg') : (editId as string);
+
+        // Normalise the book selection; a vote selection links to a poll with
+        // this meeting's id.
+        let book: BookSelection = draft.book;
+        if (book.kind === 'vote') book = { kind: 'vote', pollId: id };
+
+        const meeting: UpcomingMeeting = {
+          id,
+          date: draft.date,
+          time: draft.time,
+          hostId: draft.hostId,
+          place: draft.place,
+          book,
+        };
+
+        // Create a draft poll the first time a meeting is put to a vote.
+        const needsPoll =
+          book.kind === 'vote' && !stateRef.current.polls.some((p) => p.id === id);
+        const poll = needsPoll
+          ? {
+              id,
+              meetingId: id,
+              date: draft.date,
+              hostId: draft.hostId,
+              status: 'draft' as const,
+              closesDate: defaultCloses(),
+              myVote: null,
+              candidates: [],
+            }
+          : undefined;
+
+        if (isAdd) {
+          dispatch({ type: 'ADD_UPCOMING', meeting, poll });
+          notifier.meetingScheduled(meeting);
+        } else {
+          dispatch({ type: 'UPDATE_UPCOMING', meeting, poll });
+          notifier.meetingChanged(meeting);
+        }
+
+        return { votePollId: book.kind === 'vote' ? id : null };
+      },
+
+      removeUpcoming: (id) => dispatch({ type: 'REMOVE_UPCOMING', id }),
+
+      setUser: (user) => dispatch({ type: 'SET_USER', user }),
+
+      signOut: async () => {
+        await auth.signOut();
+        dispatch({ type: 'SET_USER', user: null });
+      },
+    };
+  }, [dispatch, clock, notifier, auth]);
+
+  const value = useMemo<BooknoteContextValue>(
+    () => ({ state, now: clock, hydrated, actions, auth, notifier }),
+    [state, clock, hydrated, actions, auth, notifier],
+  );
+
+  return <BooknoteContext.Provider value={value}>{children}</BooknoteContext.Provider>;
+}
+
+// ---------------------------------------------------------------------------
+// Hooks
+// ---------------------------------------------------------------------------
+
+export function useBooknote(): BooknoteContextValue {
+  const ctx = useContext(BooknoteContext);
+  if (!ctx) throw new Error('useBooknote must be used within a <BooknoteProvider>');
+  return ctx;
+}
+
+export function useBooknoteState(): BooknoteState {
+  return useBooknote().state;
+}
+
+export function useBooknoteActions(): BooknoteActions {
+  return useBooknote().actions;
+}
+
+/** The fixed session clock, for relative date/time labels. */
+export function useNow(): Date {
+  return useBooknote().now;
+}
