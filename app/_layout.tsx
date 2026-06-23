@@ -20,15 +20,37 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
 import { colors } from '@/constants/theme';
-import { BooknoteProvider } from '@/data/store';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+import { BooknoteProvider, useBooknote } from '@/data/store';
 
 // Keep the splash up until the Spectral + DM Sans faces are ready so we never
 // flash a system-font first paint.
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+/**
+ * The route gate. `Stack.Protected` swaps the whole navigation tree based on the
+ * session: the onboarding flow when signed out, the tab app once entered. When
+ * `authed` flips, expo-router redirects to the allowed group automatically.
+ */
+function RootNav() {
+  const { authed } = useBooknote();
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+        }}>
+        <Stack.Protected guard={authed}>
+          <Stack.Screen name="(tabs)" />
+        </Stack.Protected>
+        <Stack.Protected guard={!authed}>
+          <Stack.Screen name="(onboarding)" />
+        </Stack.Protected>
+      </Stack>
+      <StatusBar style="dark" />
+    </View>
+  );
+}
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -51,16 +73,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <BooknoteProvider>
-        <View style={{ flex: 1, backgroundColor: colors.background }}>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: colors.background },
-            }}>
-            <Stack.Screen name="(tabs)" />
-          </Stack>
-          <StatusBar style="dark" />
-        </View>
+        <RootNav />
       </BooknoteProvider>
     </SafeAreaProvider>
   );

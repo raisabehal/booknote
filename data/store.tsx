@@ -30,7 +30,7 @@ import type {
   UpcomingMeeting,
   User,
 } from './models';
-import { defaultAuth, type AuthProvider } from './auth';
+import { defaultAuth, type AuthProvider, type SignInInput, type SignUpInput } from './auth';
 import { defaultNotifier, type Notifier } from './notifications';
 import { defaultPersistence, type PersistenceAdapter } from './persistence';
 import { buildSeed } from './seed';
@@ -213,9 +213,19 @@ export interface BooknoteActions {
    *  poll when the book is "put to a vote". */
   saveMeeting(draft: MeetingDraft, mode: ScheduleMode, editId?: string): SaveMeetingResult;
   removeUpcoming(id: string): void;
-  /** Set the signed-in user (onboarding). */
-  setUser(user: User | null): void;
-  /** Sign out via the auth provider and clear the session user. */
+
+  // --- onboarding / session ---
+  /** Create an account. Sets the profile but does NOT enter the app — the flow
+   *  continues to "choose a path". */
+  signUp(input: SignUpInput): Promise<void>;
+  /** Sign in and enter the app. */
+  signIn(input: SignInInput): Promise<void>;
+  /** Redeem an invite code and enter the app. Lands in the seeded demo club. */
+  joinClub(code: string): Promise<void>;
+  /** Create a club and enter the app. Lands in the seeded demo club for now
+   *  (real empty-club creation is deferred per the handoff). */
+  createClub(input: { name: string; location: string; firstBook: string }): Promise<void>;
+  /** Sign out and return to the welcome screen. */
   signOut(): Promise<void>;
 }
 
@@ -225,6 +235,9 @@ export interface BooknoteContextValue {
   now: Date;
   /** True once any persisted state has been loaded (or confirmed absent). */
   hydrated: boolean;
+  /** Whether the user has entered the app (vs. the onboarding flow). Sourced
+   *  from the auth provider, not the persisted domain state. */
+  authed: boolean;
   actions: BooknoteActions;
   auth: AuthProvider;
   notifier: Notifier;
@@ -260,6 +273,20 @@ export function BooknoteProvider({
     () => initialState ?? buildSeed(clock),
   );
   const [hydrated, setHydrated] = useState(false);
+
+  // Session flag — whether the user has entered the app. Lives outside the
+  // persisted domain state; sourced from the auth provider on mount (the mock
+  // starts signed-out, so the app opens on the onboarding flow).
+  const [authed, setAuthed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    auth.getCurrentUser().then((user) => {
+      if (active && user) setAuthed(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [auth]);
 
   // `dispatch` runs the pure reducer against the latest state.
   const stateRef = useRef(state);
@@ -413,18 +440,38 @@ export function BooknoteProvider({
 
       removeUpcoming: (id) => dispatch({ type: 'REMOVE_UPCOMING', id }),
 
-      setUser: (user) => dispatch({ type: 'SET_USER', user }),
+      signUp: async (input) => {
+        const user = await auth.signUp(input);
+        dispatch({ type: 'SET_USER', user });
+      },
+
+      signIn: async (input) => {
+        const user = await auth.signIn(input);
+        dispatch({ type: 'SET_USER', user });
+        setAuthed(true);
+      },
+
+      joinClub: async () => {
+        // Lands in the seeded demo club; real invite redemption comes later.
+        setAuthed(true);
+      },
+
+      createClub: async () => {
+        // Lands in the seeded demo club; real empty-club creation comes later.
+        setAuthed(true);
+      },
 
       signOut: async () => {
         await auth.signOut();
         dispatch({ type: 'SET_USER', user: null });
+        setAuthed(false);
       },
     };
   }, [dispatch, clock, notifier, auth]);
 
   const value = useMemo<BooknoteContextValue>(
-    () => ({ state, now: clock, hydrated, actions, auth, notifier }),
-    [state, clock, hydrated, actions, auth, notifier],
+    () => ({ state, now: clock, hydrated, authed, actions, auth, notifier }),
+    [state, clock, hydrated, authed, actions, auth, notifier],
   );
 
   return <BooknoteContext.Provider value={value}>{children}</BooknoteContext.Provider>;
