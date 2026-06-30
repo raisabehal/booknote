@@ -19,6 +19,8 @@ export interface Member {
   name: string;
   initials: string;
   color: string;
+  /** Dietary restrictions (preset + custom) — surfaced to hosts for planning. */
+  diet: string[];
   /** True for the signed-in user's own member record (id `you`). */
   isCurrentUser?: boolean;
 }
@@ -102,6 +104,20 @@ export interface Meeting {
   bookId: string | null;
   /** Member ids who have finished the current book — drives "X of N finished". */
   finishedMemberIds: string[];
+  /** Member ids who have RSVP'd "going" — drives the attendee count and the
+   *  host's dietary-needs summary. */
+  going: string[];
+}
+
+/** Reading progress for the current book. */
+export type ReadingStatus = 'not-started' | 'reading' | 'finished';
+
+/** A discussion question for a meeting/book. */
+export interface Topic {
+  id: string;
+  text: string;
+  /** Member id of who suggested it ('' for seeded/recap topics). */
+  authorId: string;
 }
 
 /** A scheduled upcoming meeting beyond the immediate next one. */
@@ -161,6 +177,8 @@ export interface Message {
   reactions: Record<string, number>;
   /** Emoji -> whether the current user has reacted (layered on optimistically). */
   myReactions: Record<string, boolean>;
+  /** The message this one replies to (quoted in the bubble), if any. */
+  replyTo?: { authorId: string; text: string } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,9 +198,23 @@ export interface BooknoteState {
   books: Book[];
   messages: Message[];
   appPicks: AppPick[];
-  /** The current user's RSVP to the next meeting. */
-  rsvp: boolean;
+  /** Discussion topics keyed by book id (the meeting maps to its book). */
+  topics: Record<string, Topic[]>;
+  /** Meetup-album photo data URIs keyed by book id. */
+  photos: Record<string, string[]>;
+  /** The current user's reading status for the current book. */
+  readingStatus: ReadingStatus;
 }
 
-/** Emoji set offered as reactions in chat, in display order. */
-export const REACTION_EMOJIS = ['❤️', '😂', '😮'] as const;
+/** Preset dietary-restriction options offered as chips. */
+export const DIET_OPTIONS = ['Vegetarian', 'Vegan', 'Gluten-free', 'Dairy-free', 'Nut-free'] as const;
+
+/** Emoji palette offered in the chat reaction picker. */
+export const EMOJI_POOL = ['❤️', '😂', '😮', '👍', '🔥', '😢', '🎉', '📚', '🙌', '😍', '🤔', '💯'] as const;
+
+/** The three reading-status options, in display order. */
+export const READING_STATUSES: { key: ReadingStatus; label: string }[] = [
+  { key: 'not-started', label: 'Not started' },
+  { key: 'reading', label: 'Reading' },
+  { key: 'finished', label: 'Finished' },
+];

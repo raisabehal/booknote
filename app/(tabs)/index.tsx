@@ -5,34 +5,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bookshelf } from '@/components/home/bookshelf';
 import { ComingUp, type BookPill, type UpcomingRow } from '@/components/home/coming-up';
 import { NextMeetingCard } from '@/components/home/next-meeting-card';
-import { ProgressCard } from '@/components/home/progress-card';
 import { Avatar } from '@/components/ui/avatar';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { colors, fonts, spacing } from '@/constants/theme';
 import { fmtDate } from '@/data/format';
-import {
-  clubMeta,
-  currentBook,
-  currentMember,
-  meetingProgress,
-  memberById,
-} from '@/data/selectors';
+import { clubMeta, currentBook, currentMember, memberById } from '@/data/selectors';
 import { useBooknote } from '@/data/store';
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { state, now, actions } = useBooknote();
+  const { state, now } = useBooknote();
 
   const me = currentMember(state);
   const book = currentBook(state);
-  const host = memberById(state, state.meeting.hostId);
-  const next = fmtDate(state.meeting.date, now);
-  const progress = meetingProgress(state);
   const readCount = state.books.filter((b) => b.status === 'read').length;
-
-  const openEditUpcoming = (id: string) =>
-    router.push({ pathname: '/schedule', params: { mode: 'edit', id } });
 
   const rows: UpcomingRow[] = [...state.upcoming]
     .sort((a, b) => (a.date < b.date ? -1 : 1))
@@ -42,34 +29,12 @@ export default function HomeScreen() {
       const place = u.place ? ` · ${u.place}` : '';
 
       let pill: BookPill;
-      let onPress: () => void;
       if (u.book.kind === 'vote') {
-        pill = {
-          label: 'Voting open',
-          dotColor: colors.gold,
-          textColor: colors.goldDark,
-          borderColor: colors.votePillBorder,
-          dashed: false,
-        };
-        onPress = () => router.navigate('/vote');
+        pill = { label: 'Voting open', dotColor: colors.gold, textColor: colors.goldDark, borderColor: colors.votePillBorder, dashed: false };
       } else if (u.book.kind === 'decided') {
-        pill = {
-          label: u.book.title,
-          dotColor: colors.green,
-          textColor: colors.inkSoft,
-          borderColor: colors.border,
-          dashed: false,
-        };
-        onPress = () => openEditUpcoming(u.id);
+        pill = { label: u.book.title, dotColor: colors.green, textColor: colors.inkSoft, borderColor: colors.border, dashed: false };
       } else {
-        pill = {
-          label: 'Book — decide later',
-          dotColor: colors.dashed,
-          textColor: colors.warmLabel,
-          borderColor: colors.dashed,
-          dashed: true,
-        };
-        onPress = () => openEditUpcoming(u.id);
+        pill = { label: 'Book — decide later', dotColor: colors.dashed, textColor: colors.warmLabel, borderColor: colors.dashed, dashed: true };
       }
 
       return {
@@ -82,7 +47,8 @@ export default function HomeScreen() {
         hostLabel: `Hosted by ${h?.name ?? '—'}${place}`,
         timeLabel: u.time,
         pill,
-        onPress,
+        // Every upcoming row now opens the meeting-details overlay.
+        onPress: () => router.push({ pathname: '/meeting/[id]', params: { id: u.id } }),
       };
     });
 
@@ -112,23 +78,9 @@ export default function HomeScreen() {
       </View>
 
       <NextMeetingCard
-        daysUntil={next.days}
-        book={book}
-        when={`${next.label} · ${state.meeting.time}`}
-        place={state.meeting.place}
-        host={host}
-        rsvp={state.rsvp}
         onEdit={() => router.push({ pathname: '/schedule', params: { mode: 'next' } })}
-        onRsvp={actions.toggleRsvp}
         onDiscuss={() => router.navigate('/chat')}
         onOpenBook={() => book && router.push({ pathname: '/book/[id]', params: { id: book.id } })}
-      />
-
-      <ProgressCard
-        finished={progress.finished}
-        total={progress.total}
-        fraction={progress.fraction}
-        finishedMembers={progress.finishedMembers}
       />
 
       <ComingUp

@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { DietSelector } from '@/components/profile/diet-selector';
 import { Avatar } from '@/components/ui/avatar';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { colors, fonts, radius } from '@/constants/theme';
@@ -39,6 +40,13 @@ export default function ProfileSheet() {
             <Text style={styles.name}>{state.user?.name ?? 'You'}</Text>
             <Text style={styles.email}>{state.user?.email ?? 'you@email.com'}</Text>
           </View>
+        </View>
+        <View style={styles.dietSection}>
+          <View style={styles.dietHeader}>
+            <Text style={styles.dietLabel}>Dietary needs</Text>
+            <Text style={styles.dietHint}>Tap to update</Text>
+          </View>
+          <DietSelector />
         </View>
         <PressableScale onPress={signOut} style={styles.signOut}>
           <Text style={styles.signOutLabel}>Sign out</Text>
@@ -85,6 +93,16 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  dietSection: { marginBottom: 20 },
+  dietHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 },
+  dietLabel: {
+    fontFamily: fonts.sansBold,
+    fontSize: 11.5,
+    letterSpacing: 0.92,
+    textTransform: 'uppercase',
+    color: colors.muted,
+  },
+  dietHint: { fontFamily: fonts.sansRegular, fontSize: 11.5, color: colors.muted4 },
   name: {
     fontFamily: fonts.serifSemiBold,
     fontSize: 18,

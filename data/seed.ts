@@ -17,22 +17,22 @@ import { addDaysIso, isoOf, todayIso } from './format';
 import type { BooknoteState, Member } from './models';
 
 const NAMED_MEMBERS: Member[] = [
-  { id: 'you', name: 'You', initials: 'YO', color: '#BD5D38', isCurrentUser: true },
-  { id: 'maya', name: 'Maya R.', initials: 'MR', color: '#C99A2E' },
-  { id: 'jordan', name: 'Jordan T.', initials: 'JT', color: '#5B7355' },
-  { id: 'aisha', name: 'Aisha L.', initials: 'AL', color: '#7B6A9C' },
-  { id: 'dev', name: 'Dev P.', initials: 'DP', color: '#4F7A82' },
+  { id: 'you', name: 'You', initials: 'YO', color: '#BD5D38', diet: [], isCurrentUser: true },
+  { id: 'maya', name: 'Maya R.', initials: 'MR', color: '#C99A2E', diet: ['Vegetarian'] },
+  { id: 'jordan', name: 'Jordan T.', initials: 'JT', color: '#5B7355', diet: [] },
+  { id: 'aisha', name: 'Aisha L.', initials: 'AL', color: '#7B6A9C', diet: ['Gluten-free', 'Dairy-free'] },
+  { id: 'dev', name: 'Dev P.', initials: 'DP', color: '#4F7A82', diet: ['Vegan'] },
 ];
 
 // Six more members so the club genuinely has 11 people — these populate avatar
 // overflow ("+N"), the host picker and the progress denominator.
 const EXTRA_MEMBERS: Member[] = [
-  { id: 'priya', name: 'Priya K.', initials: 'PK', color: '#6E8B5A' },
-  { id: 'marcus', name: 'Marcus W.', initials: 'MW', color: '#355C7D' },
-  { id: 'lena', name: 'Lena H.', initials: 'LH', color: '#9C5C6E' },
-  { id: 'sam', name: 'Sam O.', initials: 'SO', color: '#B5773C' },
-  { id: 'tariq', name: 'Tariq B.', initials: 'TB', color: '#8A6CC4' },
-  { id: 'nina', name: 'Nina F.', initials: 'NF', color: '#A6533B' },
+  { id: 'priya', name: 'Priya K.', initials: 'PK', color: '#6E8B5A', diet: ['Nut-free'] },
+  { id: 'marcus', name: 'Marcus W.', initials: 'MW', color: '#355C7D', diet: [] },
+  { id: 'lena', name: 'Lena H.', initials: 'LH', color: '#9C5C6E', diet: [] },
+  { id: 'sam', name: 'Sam O.', initials: 'SO', color: '#B5773C', diet: ['Vegetarian'] },
+  { id: 'tariq', name: 'Tariq B.', initials: 'TB', color: '#8A6CC4', diet: [] },
+  { id: 'nina', name: 'Nina F.', initials: 'NF', color: '#A6533B', diet: [] },
 ];
 
 export const SEED_MEMBERS: Member[] = [...NAMED_MEMBERS, ...EXTRA_MEMBERS];
@@ -64,6 +64,7 @@ export function buildSeed(now: Date): BooknoteState {
       bookId: 'ntp',
       // 7 of 11 have finished the current read.
       finishedMemberIds: ['maya', 'jordan', 'aisha', 'dev', 'priya', 'marcus', 'lena'],
+      going: ['maya', 'jordan', 'aisha'],
     },
 
     upcoming: [
@@ -129,7 +130,32 @@ export function buildSeed(now: Date): BooknoteState {
       { id: 'm4', authorId: 'aisha', text: 'ok who else teared up at the ending or was it just me', createdAt: now.getTime() - 1000 * 60 * 60 * 5, reactions: { '❤️': 1, '😂': 1, '😮': 0 }, myReactions: {} },
     ],
 
-    rsvp: false,
+    // Discussion topics keyed by book id. The current read (ntp) has live
+    // starters; past reads carry their meeting-night recap questions.
+    topics: {
+      ntp: [
+        { id: 't1', text: 'Whose chapter stayed with you the most — and why?', authorId: 'maya' },
+        { id: 't2', text: 'Did the one-book-many-readers structure work for you?', authorId: 'jordan' },
+      ],
+      wager: [
+        { id: 'wr1', text: 'Was the mutiny justified given what the crew endured?', authorId: '' },
+        { id: 'wr2', text: 'Whose survival account did you find more believable?', authorId: '' },
+      ],
+      tomlake: [
+        { id: 'tl1', text: 'How did the cherry-orchard setting shape the mood?', authorId: '' },
+        { id: 'tl2', text: "Did Lara's choices feel honest to you?", authorId: '' },
+      ],
+      demon: [
+        { id: 'dm1', text: 'How did the David Copperfield parallel land for you?', authorId: '' },
+        { id: 'dm2', text: 'Which chapter was hardest to get through?', authorId: '' },
+      ],
+      trust: [{ id: 'tr1', text: 'Which of the four narratives did you trust the least?', authorId: '' }],
+      yellow: [{ id: 'yf1', text: 'Where did your sympathy land — and did it move?', authorId: '' }],
+    },
+
+    photos: {},
+
+    readingStatus: 'reading',
   };
 }
 

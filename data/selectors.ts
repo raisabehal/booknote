@@ -7,7 +7,7 @@
 import { colors, genreColors } from '@/constants/theme';
 
 import { addDaysIso, daysBetweenIso, relLabel, todayIso } from './format';
-import type { Book, BooknoteState, Candidate, Member, Poll } from './models';
+import type { Book, BooknoteState, Candidate, Member, Poll, Topic } from './models';
 
 // ---------------------------------------------------------------------------
 // Members
@@ -67,7 +67,11 @@ export interface MeetingProgress {
 }
 
 export function meetingProgress(state: BooknoteState): MeetingProgress {
+  const me = currentUserId(state);
   const finishedSet = new Set(state.meeting.finishedMemberIds);
+  // Layer the current user in/out based on their own reading status.
+  if (state.readingStatus === 'finished') finishedSet.add(me);
+  else finishedSet.delete(me);
   const finishedMembers = state.members.filter((m) => finishedSet.has(m.id));
   const total = state.members.length;
   return {
@@ -76,6 +80,61 @@ export function meetingProgress(state: BooknoteState): MeetingProgress {
     fraction: total ? finishedMembers.length / total : 0,
     finishedMembers,
   };
+}
+
+// ---------------------------------------------------------------------------
+// RSVP / attendees / dietary needs
+// ---------------------------------------------------------------------------
+
+export function currentUserId(state: BooknoteState): string {
+  return state.user?.id ?? 'you';
+}
+
+/** Whether the current user has RSVP'd to the next meeting. */
+export function isGoing(state: BooknoteState): boolean {
+  return state.meeting.going.includes(currentUserId(state));
+}
+
+/** Members who've RSVP'd "going" to the next meeting, in roster order. */
+export function goingMembers(state: BooknoteState): Member[] {
+  const set = new Set(state.meeting.going);
+  return state.members.filter((m) => set.has(m.id));
+}
+
+export interface DietRow {
+  label: string;
+  count: number;
+  /** Comma-joined names of who has this restriction. */
+  who: string;
+}
+
+/** The host's dietary-needs view: one row per restriction across everyone
+ *  going, plus the live "N going" count. */
+export function dietarySummary(state: BooknoteState): { going: number; rows: DietRow[] } {
+  const going = goingMembers(state);
+  const map: Record<string, string[]> = {};
+  for (const m of going) for (const d of m.diet) (map[d] = map[d] ?? []).push(m.name);
+  const rows = Object.keys(map)
+    .sort((a, b) => map[b].length - map[a].length)
+    .map((label) => ({ label, count: map[label].length, who: map[label].join(', ') }));
+  return { going: going.length, rows };
+}
+
+/** The current user's dietary restrictions. */
+export function currentUserDiet(state: BooknoteState): string[] {
+  return memberById(state, currentUserId(state))?.diet ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// Discussion topics & photos (keyed by book id)
+// ---------------------------------------------------------------------------
+
+export function topicsFor(state: BooknoteState, bookId: string): Topic[] {
+  return state.topics[bookId] ?? [];
+}
+
+export function photosFor(state: BooknoteState, bookId: string): string[] {
+  return state.photos[bookId] ?? [];
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +203,65 @@ export function pollStatusLabel(poll: Poll, now: Date): string {
 /** The poll linked to an upcoming meeting whose book is "put to a vote". */
 export function pollForMeeting(state: BooknoteState, meetingId: string): Poll | undefined {
   return state.polls.find((p) => p.id === meetingId);
+}
+
+// ---------------------------------------------------------------------------
+// Book detail — individual scores & meeting-night recap
+// ---------------------------------------------------------------------------
+
+export interface MemberScore {
+  name: string;
+  initials: string;
+  color: string;
+  /** Star rating 0–5. */
+  score: number;
+}
+
+/**
+ * Per-member scores for a book's "Individual scores" panel. The current user's
+ * is their real `myRating`; the rest are derived deterministically around the
+ * club average (a stand-in for stored per-member ratings).
+ */
+export function memberScores(state: BooknoteState, book: Book): MemberScore[] {
+  const seed = book.id.charCodeAt(0) + book.id.length;
+  const reviewers = ['maya', 'jordan', 'aisha', 'dev'];
+  const offsets = [1, 0, -1, 0, 1];
+  const rows: MemberScore[] = [];
+  if (book.myRating > 0) {
+    const me = memberById(state, currentUserId(state));
+    rows.push({ name: 'You', initials: me?.initials ?? 'YO', color: me?.color ?? colors.accent, score: book.myRating });
+  }
+  reviewers.forEach((key, i) => {
+    const m = memberById(state, key);
+    if (!m) return;
+    let sc = Math.round((book.clubRating ?? 4) + offsets[(i + seed) % offsets.length]);
+    sc = Math.max(2, Math.min(5, sc));
+    rows.push({ name: m.name, initials: m.initials, color: m.color, score: sc });
+  });
+  return rows;
+}
+
+export interface RecapAttendees {
+  members: { name: string; initials: string; color: string }[];
+  countLabel: string;
+  moreLabel: string;
+}
+
+/** Attendees shown in a read book's "Meeting night" recap. */
+export function recapAttendees(state: BooknoteState, book: Book): RecapAttendees {
+  const seed = book.id.charCodeAt(0) + book.id.length;
+  const keys = ['you', 'maya', 'jordan', 'aisha', 'dev'];
+  const members = keys
+    .map((k) => memberById(state, k))
+    .filter((m): m is Member => !!m)
+    .map((m) => ({ name: m.name, initials: m.initials, color: m.color }));
+  const total = 8 + (seed % 3);
+  const more = total - members.length;
+  return {
+    members,
+    countLabel: `${total} of ${state.members.length}`,
+    moreLabel: more > 0 ? `+${more} more` : '',
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { BooknoteState } from './models';
 
 /** Bumped when the persisted shape changes; mismatched payloads are discarded. */
-export const PERSIST_VERSION = 1;
+export const PERSIST_VERSION = 2;
 
 interface Envelope {
   version: number;

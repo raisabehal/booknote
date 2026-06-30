@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { DietSelector } from '@/components/profile/diet-selector';
 import { OnboardingShell } from '@/components/onboarding/onboarding-shell';
 import { PasswordField } from '@/components/onboarding/password-field';
 import { PrimaryButton } from '@/components/ui/button';
@@ -61,6 +62,14 @@ export default function CreateAccountScreen() {
           value={password}
           onChangeText={setPassword}
         />
+        <View>
+          <View style={styles.dietLabelRow}>
+            <Text style={styles.dietLabel}>Dietary needs</Text>
+            <Text style={styles.dietLabelSoft}> · so hosts can plan</Text>
+          </View>
+          <Text style={styles.dietHelp}>Pick any that apply — shared with whoever&apos;s hosting.</Text>
+          <DietSelector />
+        </View>
       </View>
     </OnboardingShell>
   );
@@ -70,6 +79,16 @@ const styles = StyleSheet.create({
   fields: {
     gap: 17,
   },
+  dietLabelRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 },
+  dietLabel: {
+    fontFamily: fonts.sansBold,
+    fontSize: 11.5,
+    letterSpacing: 0.92,
+    textTransform: 'uppercase',
+    color: colors.muted,
+  },
+  dietLabelSoft: { fontFamily: fonts.sansMedium, fontSize: 11.5, color: '#B7A892' },
+  dietHelp: { fontFamily: fonts.sansRegular, fontSize: 12, color: colors.muted3, marginBottom: 10, lineHeight: 17 },
   switch: {
     textAlign: 'center',
     fontFamily: fonts.sansRegular,

@@ -27,6 +27,7 @@ import type {
   BookSelection,
   Candidate,
   Message,
+  Topic,
   UpcomingMeeting,
   User,
 } from './models';
@@ -45,6 +46,11 @@ type Action =
   | { type: 'SET_USER'; user: User | null }
   | { type: 'RATE_BOOK'; bookId: string; star: number }
   | { type: 'TOGGLE_RSVP' }
+  | { type: 'SET_MEMBER_DIET'; memberId: string; diet: string[] }
+  | { type: 'SET_READING_STATUS'; status: BooknoteState['readingStatus'] }
+  | { type: 'ADD_TOPIC'; bookId: string; topic: Topic }
+  | { type: 'ADD_PHOTO'; bookId: string; uri: string }
+  | { type: 'REMOVE_PHOTO'; bookId: string; index: number }
   | { type: 'CAST_VOTE'; pollId: string; candidateId: string }
   | { type: 'TOGGLE_REACTION'; messageId: string; emoji: string }
   | { type: 'ADD_MESSAGE'; message: Message }
@@ -54,6 +60,11 @@ type Action =
   | { type: 'ADD_UPCOMING'; meeting: UpcomingMeeting; poll?: BooknoteState['polls'][number] }
   | { type: 'UPDATE_UPCOMING'; meeting: UpcomingMeeting; poll?: BooknoteState['polls'][number] }
   | { type: 'REMOVE_UPCOMING'; id: string };
+
+/** The current user's member id (the seeded account maps onto `you`). */
+function currentUserId(state: BooknoteState): string {
+  return state.user?.id ?? 'you';
+}
 
 // ---------------------------------------------------------------------------
 // Reducer (pure)
@@ -78,8 +89,51 @@ export function reducer(state: BooknoteState, action: Action): BooknoteState {
         ),
       };
 
-    case 'TOGGLE_RSVP':
-      return { ...state, rsvp: !state.rsvp };
+    case 'TOGGLE_RSVP': {
+      const me = currentUserId(state);
+      const going = state.meeting.going.includes(me)
+        ? state.meeting.going.filter((id) => id !== me)
+        : [...state.meeting.going, me];
+      return { ...state, meeting: { ...state.meeting, going } };
+    }
+
+    case 'SET_MEMBER_DIET':
+      return {
+        ...state,
+        members: state.members.map((m) =>
+          m.id === action.memberId ? { ...m, diet: action.diet } : m,
+        ),
+      };
+
+    case 'SET_READING_STATUS':
+      return { ...state, readingStatus: action.status };
+
+    case 'ADD_TOPIC':
+      return {
+        ...state,
+        topics: {
+          ...state.topics,
+          [action.bookId]: [...(state.topics[action.bookId] ?? []), action.topic],
+        },
+      };
+
+    case 'ADD_PHOTO':
+      return {
+        ...state,
+        photos: {
+          ...state.photos,
+          [action.bookId]: [...(state.photos[action.bookId] ?? []), action.uri],
+        },
+      };
+
+    case 'REMOVE_PHOTO':
+      return {
+        ...state,
+        photos: {
+          ...state.photos,
+          [action.bookId]: (state.photos[action.bookId] ?? []).filter((_, i) => i !== action.index),
+        },
+      };
 
     case 'CAST_VOTE':
       return {
@@ -199,10 +253,22 @@ export interface SaveMeetingResult {
 export interface BooknoteActions {
   rateBook(bookId: string, star: number): void;
   toggleRsvp(): void;
+  /** Toggle one of the current user's dietary restrictions. */
+  toggleDiet(option: string): void;
+  /** Add a custom (free-text) dietary restriction for the current user. */
+  addCustomDiet(text: string): void;
+  /** Set the current user's reading status for the current book. */
+  setReadingStatus(status: BooknoteState['readingStatus']): void;
+  /** Add a discussion topic to a book's meeting. */
+  addTopic(bookId: string, text: string): void;
+  /** Append a photo (data URI) to a book's meetup album. */
+  addPhoto(bookId: string, uri: string): void;
+  /** Remove a photo from a book's album by index. */
+  removePhoto(bookId: string, index: number): void;
   castVote(pollId: string, candidateId: string): void;
   toggleReaction(messageId: string, emoji: string): void;
-  /** Append a chat message from the current user. Returns its id. */
-  sendMessage(text: string): string | null;
+  /** Append a chat message from the current user, optionally replying to one. */
+  sendMessage(text: string, replyToId?: string | null): string | null;
   /** Suggest a member's book into a poll and auto-select it as the user's vote. */
   suggestCandidate(pollId: string, title: string): void;
   /** Add an app pick to a poll without casting a vote. */
@@ -329,10 +395,48 @@ export function BooknoteProvider({
       castVote: (pollId, candidateId) => dispatch({ type: 'CAST_VOTE', pollId, candidateId }),
       toggleReaction: (messageId, emoji) => dispatch({ type: 'TOGGLE_REACTION', messageId, emoji }),
 
-      sendMessage: (text) => {
+      toggleDiet: (option) => {
+        const me = stateRef.current.user?.id ?? 'you';
+        const member = stateRef.current.members.find((m) => m.id === me);
+        const current = member?.diet ?? [];
+        const diet = current.includes(option)
+          ? current.filter((d) => d !== option)
+          : [...current, option];
+        dispatch({ type: 'SET_MEMBER_DIET', memberId: me, diet });
+      },
+
+      addCustomDiet: (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        const me = stateRef.current.user?.id ?? 'you';
+        const member = stateRef.current.members.find((m) => m.id === me);
+        const current = member?.diet ?? [];
+        if (current.includes(trimmed)) return;
+        dispatch({ type: 'SET_MEMBER_DIET', memberId: me, diet: [...current, trimmed] });
+      },
+
+      setReadingStatus: (status) => dispatch({ type: 'SET_READING_STATUS', status }),
+
+      addTopic: (bookId, text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        dispatch({
+          type: 'ADD_TOPIC',
+          bookId,
+          topic: { id: uid('topic'), text: trimmed, authorId: stateRef.current.user?.id ?? 'you' },
+        });
+      },
+
+      addPhoto: (bookId, uri) => dispatch({ type: 'ADD_PHOTO', bookId, uri }),
+      removePhoto: (bookId, index) => dispatch({ type: 'REMOVE_PHOTO', bookId, index }),
+
+      sendMessage: (text, replyToId) => {
         const trimmed = text.trim();
         if (!trimmed) return null;
         const id = uid('msg');
+        const parent = replyToId
+          ? stateRef.current.messages.find((m) => m.id === replyToId)
+          : null;
         dispatch({
           type: 'ADD_MESSAGE',
           message: {
@@ -342,6 +446,7 @@ export function BooknoteProvider({
             createdAt: Date.now(),
             reactions: {},
             myReactions: {},
+            replyTo: parent ? { authorId: parent.authorId, text: parent.text } : null,
           },
         });
         return id;
